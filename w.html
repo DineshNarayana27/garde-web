@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neuro-Weaver: Editor Edition</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a0a;
+            --node: #141414;
+            --text: #e0e0e0;
+            --accent: #00ff9d; /* Green for success/AI */
+            --review: #ffcc00; /* Yellow for review mode */
+            --border: #333;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            font-family: 'JetBrains Mono', monospace;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            touch-action: none;
+        }
+
+        /* --- BOTTOM TOOLBAR --- */
+        .toolbar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(15, 15, 15, 0.95);
+            border-top: 1px solid var(--border);
+            padding: 15px;
+            box-sizing: border-box;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 -10px 30px rgba(0,0,0,0.5);
+        }
+
+        .row { display: flex; gap: 10px; justify-content: space-between; }
+
+        input {
+            background: #222;
+            border: 1px solid var(--border);
+            color: var(--accent);
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            flex-grow: 1;
+        }
+
+        button {
+            background: #222;
+            color: #fff;
+            border: 1px solid var(--border);
+            padding: 12px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            text-transform: uppercase;
+            flex-grow: 1;
+        }
+        button:active { background: #333; transform: scale(0.98); }
+        .btn-add { border-color: #666; }
+        .btn-magic { border-color: #bd00ff; color: #bd00ff; }
+
+        /* --- CANVAS --- */
+        #drawflow {
+            width: 100vw;
+            height: calc(100vh - 140px);
+            background-image: radial-gradient(#222 1px, transparent 1px);
+            background-size: 30px 30px;
+        }
+
+        /* --- NODES --- */
+        .drawflow .drawflow-node {
+            background: var(--node);
+            border: 1px solid var(--border);
+            width: 320px; /* Perfect width for mobile */
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .drawflow .drawflow-node.selected { border-color: var(--accent); }
+
+        .node-header {
+            background: #1a1a1a;
+            padding: 12px;
+            font-size: 12px;
+            color: #888;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        /* The Editor Area */
+        textarea {
+            width: 100%;
+            height: 140px;
+            background: #0d0d0d;
+            border: none;
+            color: var(--text);
+            padding: 15px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 15px; /* Readable size */
+            line-height: 1.6;
+            resize: none;
+            outline: none;
+            box-sizing: border-box;
+        }
+
+        .node-footer {
+            padding: 10px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 8px;
+        }
+
+        .action-btn {
+            font-size: 11px;
+            padding: 10px;
+        }
+        .btn-ai { color: var(--accent); border-color: var(--accent); background: rgba(0,255,157,0.05); }
+        .btn-review { color: var(--review); border-color: var(--review); background: rgba(255,204,0,0.05); }
+
+        /* --- SUGGESTION BOX (Hidden by default) --- */
+        .suggestion-box {
+            display: none;
+            background: #112211;
+            border-top: 1px solid var(--accent);
+            padding: 12px;
+        }
+        .suggestion-text {
+            font-size: 13px;
+            color: #ccffcc;
+            margin-bottom: 10px;
+            font-style: italic;
+        }
+        .suggestion-actions { display: flex; gap: 10px; }
+        .btn-apply { background: var(--accent); color: #000; border: none; }
+        .btn-cancel { background: #333; color: #fff; border: none; }
+
+        /* Master Node Style */
+        .master-node { width: 340px !important; border-color: #bd00ff !important; }
+
+    </style>
+</head>
+<body>
+
+<div id="drawflow"></div>
+
+<div class="toolbar">
+    <div class="row">
+        <input type="password" id="api-key" placeholder="Paste Hugging Face Token Here">
+    </div>
+    <div class="row">
+        <button class="btn-add" onclick="addFragment()">+ New Fragment</button>
+        <button class="btn-magic" onclick="architectMode()">✨ Auto-Stitch</button>
+    </div>
+    <div style="text-align:center; font-size:10px; color:#555;">
+        Neuro-Weaver V7 • Mobile Optimized
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.js"></script>
+<script>
+    // --- 1. SETUP ---
+    const id = document.getElementById("drawflow");
+    const editor = new Drawflow(id);
+    editor.reroute = true;
+    editor.editor_mode = 'edit';
+    editor.start();
+
+    // Key Storage
+    const keyInput = document.getElementById('api-key');
+    if(localStorage.getItem('hf_key')) keyInput.value = localStorage.getItem('hf_key');
+    keyInput.addEventListener('input', () => localStorage.setItem('hf_key', keyInput.value));
+
+    let nodeCount = 0;
+
+    // --- 2. ADD NODE ---
+    window.addFragment = function(content = "") {
+        nodeCount++;
+        const html = `
+            <div>
+                <div class="node-header">
+                    <span>PART ${nodeCount}</span>
+                    <span style="color:#ff5555; padding:0 10px; font-size:18px;" onclick="del(this)">×</span>
+                </div>
+                <div><textarea id="text-${nodeCount}" placeholder="Tap to write...">${content}</textarea></div>
+                
+                <div id="sugg-box-${nodeCount}" class="suggestion-box">
+                    <div class="suggestion-text" id="sugg-text-${nodeCount}"></div>
+                    <div class="suggestion-actions">
+                        <button class="btn-apply action-btn" onclick="applyFix(${nodeCount})">✔ Apply Fix</button>
+                        <button class="btn-cancel action-btn" onclick="cancelFix(${nodeCount})">Dismiss</button>
+                    </div>
+                </div>
+
+                <div class="node-footer">
+                    <button class="action-btn btn-ai" onclick="expandNode(${nodeCount}, this)">AI Continue</button>
+                    <button class="action-btn btn-review" onclick="reviewNode(${nodeCount}, this)">Proofread</button>
+                </div>
+            </div>`;
+        
+        editor.addNode('fragment', 1, 1, 50 + (nodeCount*10), 100 + (nodeCount*10), '', {}, html);
+    }
+    
+    addFragment();
+
+    // --- 3. AI: PROOFREAD ---
+    window.reviewNode = async function(id, btn) {
+        const text = document.getElementById(`text-${id}`).value;
+        if(text.length < 3) return;
+
+        // Prompt specifically for grammar/style without changing meaning
+        const prompt = `[INST] Act as a professional editor. 
+        1. Correct the grammar and punctuation of the text below.
+        2. Improve the flow slightly, but keep the original meaning and tone.
+        
+        Original Text: "${text}"
+        
+        Output ONLY the corrected text: [/INST]`;
+
+        await callAI(prompt, btn, (res) => {
+            // Show the suggestion box
+            document.getElementById(`sugg-text-${id}`).innerText = res;
+            document.getElementById(`sugg-box-${id}`).style.display = 'block';
+        });
+    }
+
+    // --- 4. APPLY / CANCEL FIX ---
+    window.applyFix = function(id) {
+        const newText = document.getElementById(`sugg-text-${id}`).innerText;
+        document.getElementById(`text-${id}`).value = newText;
+        document.getElementById(`sugg-box-${id}`).style.display = 'none';
+    }
+
+    window.cancelFix = function(id) {
+        document.getElementById(`sugg-box-${id}`).style.display = 'none';
+    }
+
+    // --- 5. AI: CONTINUE ---
+    window.expandNode = async function(id, btn) {
+        const text = document.getElementById(`text-${id}`).value;
+        const prompt = `[INST] Continue this story fragment naturally. Do not repeat the input. Text: "${text}" [/INST]`;
+        await callAI(prompt, btn, (res) => {
+            document.getElementById(`text-${id}`).value = text + " " + res;
+        });
+    }
+
+    // --- 6. ARCHITECT MODE ---
+    window.architectMode = async function() {
+        const btn = document.querySelector('.btn-magic');
+        let fragments = [];
+        document.querySelectorAll('textarea').forEach((ta, index) => {
+            if(ta.value.length > 5 && !ta.closest('.master-node') && ta.id.includes('text-')) {
+                fragments.push(`[Part ${index+1}]: ${ta.value}`);
+            }
+        });
+
+        if(fragments.length < 2) { alert("Write at least 2 fragments first!"); return; }
+
+        const prompt = `[INST] Merge these fragments into a single cohesive story. Fix chronological order and add bridge sentences.
+        ${fragments.join('\n\n')}
+        Merged Story: [/INST]`;
+
+        await callAI(prompt, btn, (res) => {
+            const html = `
+            <div class="master-node">
+                <div class="node-header" style="color:#bd00ff">✨ MASTER STORY <span onclick="del(this)">×</span></div>
+                <div><textarea>${res}</textarea></div>
+            </div>`;
+            editor.addNode('master', 0, 0, 50, 400, 'master-node', {}, html);
+        });
+    }
+
+    // --- CORE API ---
+    async function callAI(prompt, btn, callback) {
+        const key = keyInput.value;
+        if(!key) { alert("Paste Hugging Face Token first!"); return; }
+        
+        const originalText = btn.innerText;
+        btn.innerText = "Thinking...";
+        btn.disabled = true;
+
+        try {
+            // Using Mistral-7B-Instruct-v0.3 for best logic
+            const req = await fetch(`https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3`, {
+                method: "POST",
+                headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                    inputs: prompt, 
+                    parameters: { max_new_tokens: 250, return_full_text: false, temperature: 0.7 }
+                })
+            });
+            
+            if(!req.ok) throw new Error("Blocked");
+            const json = await req.json();
+            
+            if(json.error && json.error.includes("loading")) {
+                btn.innerText = "Warming Up...";
+                setTimeout(() => callAI(prompt, btn, callback), 20000);
+                return;
+            }
+
+            callback(json[0].generated_text.replace("</s>", "").trim());
+
+        } catch(e) {
+            alert("Connection Failed. Please ensure you uploaded this file to Netlify/web host (not local file).");
+        } finally {
+            if(!btn.innerText.includes("Warming")) {
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
+        }
+    }
+
+    window.del = function(el) {
+        const id = el.closest('.drawflow-node').id.replace('node-', '');
+        editor.removeNodeId(id);
+    }
+</script>
+</body>
+</html>
